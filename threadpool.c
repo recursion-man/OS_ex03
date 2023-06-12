@@ -3,10 +3,10 @@
 //
 #include "threadpool.h"
 
-void* worker_func(void* arg) {
-    threadpool* pool = (threadpool*)arg;
-    Queue* task_queue = pool->task_queue;
-    Queue* pending_queue = pool->pending_queue;
+// i just copied from gpt.. I'll continue later...
+void* worker_func(void* arg, threadpool* _threadpool){
+    Queue* task_queue = _threadpool->task_queue;
+    Queue* pending_queue = _threadpool->pending_queue;
 
     while (1) {
         pthread_mutex_lock(&(task_queue->mutex));
