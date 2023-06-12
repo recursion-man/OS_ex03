@@ -7,13 +7,15 @@
 #include "segel.h"
 #include "thread_safe_queue.h"
 
-typedef struct {
-    pthread_t* threads;
+typedef struct
+{
+    pthread_t *threads;
     int num_threads;
-    Queue* pool_queue;
-} threadpool;
+    Queue *pool_queue;
+} ThreadPool;
 
+void threadPool_init(ThreadPool *threadpool, int number_of_threads, int queue_size, int max_size, Sched_Policy sched_policy);
+void threadPoolDestroy(ThreadPool *threadpool);
+void *worker_func(void *arg, ThreadPool *_threadpool);
 
-void* worker_func(void* arg, threadpool* _threadpool);
-
-#endif //WEBSERVER_FILES_THREADPOOL_H
+#endif // WEBSERVER_FILES_THREADPOOL_H
