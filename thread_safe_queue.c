@@ -213,6 +213,7 @@ void removeFromTaskList(TasksList *tasks_list, int target_fd)
         tasks_list->tail = NULL;
     free(temp);
 
+    tasks_list->size--;
 }
 
 /// wait (without busy-wait) for the condition specified in the policy
