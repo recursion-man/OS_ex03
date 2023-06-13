@@ -1,66 +1,56 @@
 #include "thread_safe_queue.h"
 
 /*---------------------Constructor---------------------*/
-void tasksList_init(TasksList *tasks, int number_of_threads)
+void tasksList_init(TasksList *tasks_list)
 {
     //  inital fields
-    tasks->size = 0;
-    tasks->number_of_threads = number_of_threads;
-    tasks->front = 0;
-    tasks->rear = 0;
-
-    //  allocate "number_of_threads" cells
-    tasks->fd = (int *)malloc(sizeof(int) * number_of_threads);
-
-    //  initial locks and condition variables
-    pthread_mutex_init(&(tasks->lock), NULL);
-    pthread_cond_init(&(tasks->pending_queue_not_empty), NULL);
+    tasks_list->size = 0;
+    tasks_list->head = NULL;
+    tasks_list->tail = NULL;
 }
 
-void pendingQueue_init(PendingQueue *pending_tasks, int size, int capacity)
+void pendingQueue_init(PendingQueue *pending_tasks)
 {
     //  inital fields
-    pending_tasks->size = size;
-    pending_tasks->capacity = capacity;
+    pending_tasks->size = 0;
     pending_tasks->head = NULL;
     pending_tasks->tail = NULL;
-
-    //  initial locks and condition variables
-    pthread_mutex_init(&(tasks->lock), NULL);
-    pthread_cond_init(&(tasks->tasks_list_not_full), NULL);
 }
 
 /*
     queue_size - the arg given by the cmd line.
     Note: because there are already "number_of_threads" tasks in the tasks list, the amount o remaining tasks that can be in the pending queue is
     "queue_size" - "number_of_threads" (because we splitted the queue into to queue's)
-    max_capacity - the arg given by the cmd line for max capacity for the dynamic choise in sched_policy
+    max_capacity - the arg given by the cmd line for max capacity for the dynamic choice in sched_policy
     Note: The capacity of the pending queue should be "max_capacity" - "number_of_threads", since there are also tasks in the tasks_list
 */
-void Queue_init(Queue *q, int number_of_threads, int queue_size, int max_capacity, Sched_Policy policy)
+void Queue_init(Queue *q, int _number_of_threads, int queue_size, int max_capacity, Sched_Policy policy)
 {
     //  allocate memory
     q->m_pending_queue = (PendingQueue *)malloc(sizeof(PendingQueue));
     q->m_tasks_list = (TasksList *)malloc(sizeof(TasksList));
 
     //  initial tasks_list
-    tasksList_init(q->m_tasks_list, number_of_threads);
-
-    //  calculate the pending queue sizes according to the logic in the Note's in the comment above
-    int size_of_pending_queue = queue_size - number_of_threads;
-    int capacity_for_pending_queue = max_capacity - number_of_threads;
+    tasksList_init(q->m_tasks_list);
 
     //  initial pending_queue
-    pendingQueue_init(q->m_pending_queue, size_of_pending_queue, capacity_for_pending_queue);
+    pendingQueue_init(q->m_pending_queue);
+
+    number_of_threads = _number_of_threads;
 }
 
 /*---------------------D'tors---------------------*/
 
-void tasksListDestroy(TasksList *tasks)
+void tasksListDestroy(TasksList *tasks_list)
 {
-    free(tasks->fd);
-    pthread_mutex_destroy(&(tasks->lock));
-    pthread_cond_destroy(&(tasks->pending_queue_not_empty));
+    Node *current = tasks_list->head;
+    Node *next;
+    while (current != NULL)
+    {
+        next = current->next;
+        free(current);
+        current = next;
+    }
 }
 
 void pendingQueueDestroy(PendingQueue *pending_queue)
@@ -73,15 +63,14 @@ void pendingQueueDestroy(PendingQueue *pending_queue)
         free(current);
         current = next;
     }
-
-    pthread_mutex_destroy(&(pending_queue->lock));
-    pthread_cond_destroy(&(pending_queue->tasks_list_not_full));
 }
 
 void QueueDestroy(Queue *queue)
 {
     pendingQueueDestroy(queue->m_pending_queue);
     tasksListDestroy(queue->m_tasks_list);
+    pthread_mutex_destroy(&(q_lock));
+    pthread_cond_destroy(&(ready_to_insert));
 }
 
 /*---------------------AUX---------------------*/
@@ -96,28 +85,24 @@ void addFdToQueue(Queue *q, int fd)
 {
     //  get pending queue and lock it
     PendingQueue *pending_tasks = q->m_pending_queue;
-    pthread_mutex_lock(&(pending_tasks->lock), NULL);
+    TasksList * tasks_list = q->m_tasks_list;
+    pthread_mutex_lock(&q_lock);
 
     //  check if the pending queue is full
-    if (pending_tasks->size < pending_tasks->capacity)
-    {
-        //  save current size inorder to know if the queue was empty, to signal the threads
-        int prev_size = pending_tasks->size;
-
-        //  add to pending queue
+    if (pending_tasks->size + tasks_list->size < q->capacity) {
         addToPendingQueue(pending_tasks, fd);
+        pthread_mutex_unlock(&q_lock);
+   }
 
-        //  signal the thread if the queue was empty before and now it's not
-        if (prev_size == 0)
-            pthread_cond_signal(&(q->m_tasks_list->m_pending_queue_not_empty));
-    }
+    // if the Queue is full, act as the policy indicates
     else
     {
-        // do some sched shit
+        policyHandler(q, fd);
     }
-    pthread_mutex_unlock(&(pending_tasks->lock));
 }
 
+// call only after q_lock is locked
+// no locks in this function - to prevent deadlocks!!
 void addToPendingQueue(PendingQueue *pending_queue, int fd)
 {
     //  create new node
@@ -141,4 +126,104 @@ void addToPendingQueue(PendingQueue *pending_queue, int fd)
 
     //  increase size
     pending_queue->size++;
+}
+
+// call only after q_lock is locked
+// no locks in this function - to prevent deadlocks!!
+int getJobFromPendingQueue(PendingQueue *pending_queue)
+{
+    //  check if it's the first Node inserted
+    if (pending_queue->size <= 0) {
+        fprintf(stderr, "queue is already empty\n");
+        return -1;
+    }
+
+    Node* target = pending_queue->head;
+    int target_fd = target->fd;
+    Node *target_next = target->next;
+    pending_queue->head = target_next;
+
+    // If the head becomes NULL, update the tail to NULL as well
+    if (!target_next) {
+        pending_queue->tail = NULL;
+    }
+
+    free(target);
+    pending_queue->size--;
+    return target_fd;
+}
+
+// call only after q_lock is locked
+// no locks in this function - to prevent deadlocks!!
+void addToTaskList(TasksList *tasks_list, int fd)
+{
+    //  create new node
+    Node *new_fd_request = (Node *)malloc(sizeof(Node));
+
+    //  set data
+    new_fd_request->fd = fd;
+    new_fd_request->next = NULL;
+
+    //  check if it's the first Node inserted
+    if (tasks_list->size == 0)
+    {
+        tasks_list->head = new_fd_request;
+        tasks_list->tail = new_fd_request;
+    }
+    else
+    {
+        tasks_list->tail->next = new_fd_request;
+        tasks_list->tail = tasks_list->tail->next;
+    }
+
+    //  increase size
+    tasks_list->size++;
+}
+
+void removeFromTaskList(TasksList *tasks_list, int target_fd)
+{
+    Node* temp = tasks_list->head;
+    Node* prev = NULL;
+
+    // in case we need to delete the head
+    if (temp != NULL && temp->fd == target_fd) {
+        tasks_list->head = temp->next;
+        if (!temp->next)
+            tasks_list->tail = NULL;
+        free(temp);
+        return;
+    }
+
+    // iterate through the list
+    while (temp != NULL && temp->fd != target_fd) {
+        prev = temp;
+        temp = temp->next;
+    }
+
+    // If the fd isn't there
+    if (temp == NULL) {
+        printf("Element not found in the list.\n");
+        return;
+    }
+
+    // updating the previous node's next pointer.
+    // check if we need to update the tail
+    prev->next = temp->next;
+    if (!temp->next)
+        tasks_list->tail = NULL;
+    free(temp);
+
+}
+
+/// wait (without busy-wait) for the condition specified in the policy
+void policyHandler(Queue* q, int fd)
+{
+    Sched_Policy policy = q->m_sched_policy;
+
+    // create cond depending on the policy;
+    // no bool type in c, so I used int
+    int cond;
+    while (!cond) {
+        pthread_cond_wait(&ready_to_insert, &q_lock);
+    }
 }
