@@ -7,9 +7,9 @@
 #include "request.h"
 #include "segel.h"
 
-
 pthread_mutex_t q_lock;
 pthread_cond_t ready_to_insert;
+pthread_cond_t pending_queue_not_empty;
 static int number_of_threads;
 
 typedef enum
@@ -34,7 +34,6 @@ typedef struct
     Node *tail;
     int size;
 
-
     // I think we dont need this condition
     pthread_cond_t tasks_list_not_full;
 
@@ -49,8 +48,6 @@ typedef struct
     // I think we dont need this condition
     pthread_cond_t pending_queue_not_empty;
 } TasksList;
-
-
 
 typedef struct
 {
@@ -72,7 +69,11 @@ void Queue_init(Queue *q, int number_of_threads, int number_of_request_connectio
 
 void addFdToQueue(Queue *q, int fd);
 void addToPendingQueue(PendingQueue *pending_queue, int fd);
+int getJobFromPendingQueue(PendingQueue *pending_queue);
 
-void policyHandler(Queue* q, int fd);
+void addToTaskList(TasksList *tasks_list, int fd);
+void removeFromTaskList(TasksList *tasks_list, int target_fd);
+
+void policyHandler(Queue *q, int fd);
 
 #endif // WEBSERVER_FILES_THREAD_SAFE_QUEUE_H

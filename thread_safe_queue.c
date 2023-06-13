@@ -85,14 +85,15 @@ void addFdToQueue(Queue *q, int fd)
 {
     //  get pending queue and lock it
     PendingQueue *pending_tasks = q->m_pending_queue;
-    TasksList * tasks_list = q->m_tasks_list;
+    TasksList *tasks_list = q->m_tasks_list;
     pthread_mutex_lock(&q_lock);
 
     //  check if the pending queue is full
-    if (pending_tasks->size + tasks_list->size < q->capacity) {
+    if (pending_tasks->size + tasks_list->size < q->capacity)
+    {
         addToPendingQueue(pending_tasks, fd);
         pthread_mutex_unlock(&q_lock);
-   }
+    }
 
     // if the Queue is full, act as the policy indicates
     else
@@ -113,10 +114,11 @@ void addToPendingQueue(PendingQueue *pending_queue, int fd)
     new_fd_request->next = NULL;
 
     //  check if it's the first Node inserted
-    if (pending_queue->size == 0)
+    if (pending_queue->size == 1)
     {
         pending_queue->head = new_fd_request;
         pending_queue->tail = new_fd_request;
+        pthread_cond_signal(&(pending_queue_not_empty));
     }
     else
     {
@@ -133,23 +135,29 @@ void addToPendingQueue(PendingQueue *pending_queue, int fd)
 int getJobFromPendingQueue(PendingQueue *pending_queue)
 {
     //  check if it's the first Node inserted
-    if (pending_queue->size <= 0) {
+    if (pending_queue->size <= 0)
+    {
         fprintf(stderr, "queue is already empty\n");
         return -1;
     }
 
-    Node* target = pending_queue->head;
+    Node *target = pending_queue->head;
     int target_fd = target->fd;
     Node *target_next = target->next;
     pending_queue->head = target_next;
 
     // If the head becomes NULL, update the tail to NULL as well
-    if (!target_next) {
+    if (!target_next)
+    {
         pending_queue->tail = NULL;
     }
 
     free(target);
     pending_queue->size--;
+
+    //  signal that there is space in the pending queue
+    pthread_cond_signal(&(ready_to_insert));
+
     return target_fd;
 }
 
@@ -182,11 +190,12 @@ void addToTaskList(TasksList *tasks_list, int fd)
 
 void removeFromTaskList(TasksList *tasks_list, int target_fd)
 {
-    Node* temp = tasks_list->head;
-    Node* prev = NULL;
+    Node *temp = tasks_list->head;
+    Node *prev = NULL;
 
     // in case we need to delete the head
-    if (temp != NULL && temp->fd == target_fd) {
+    if (temp != NULL && temp->fd == target_fd)
+    {
         tasks_list->head = temp->next;
         if (!temp->next)
             tasks_list->tail = NULL;
@@ -195,13 +204,15 @@ void removeFromTaskList(TasksList *tasks_list, int target_fd)
     }
 
     // iterate through the list
-    while (temp != NULL && temp->fd != target_fd) {
+    while (temp != NULL && temp->fd != target_fd)
+    {
         prev = temp;
         temp = temp->next;
     }
 
     // If the fd isn't there
-    if (temp == NULL) {
+    if (temp == NULL)
+    {
         printf("Element not found in the list.\n");
         return;
     }
@@ -210,21 +221,23 @@ void removeFromTaskList(TasksList *tasks_list, int target_fd)
     // check if we need to update the tail
     prev->next = temp->next;
     if (!temp->next)
-        tasks_list->tail = NULL;
+        tasks_list->tail = NULL; // Note: should it be: tasks_list->tail = prev?
+
     free(temp);
 
     tasks_list->size--;
 }
 
 /// wait (without busy-wait) for the condition specified in the policy
-void policyHandler(Queue* q, int fd)
+void policyHandler(Queue *q, int fd)
 {
     Sched_Policy policy = q->m_sched_policy;
 
     // create cond depending on the policy;
     // no bool type in c, so I used int
     int cond;
-    while (!cond) {
+    while (!cond)
+    {
         pthread_cond_wait(&ready_to_insert, &q_lock);
     }
 }

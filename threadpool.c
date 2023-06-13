@@ -13,32 +13,22 @@ void *worker_func(void *arg, ThreadPool *_threadpool)
     while (1)
     {
 
-        pthread_mutex_lock(&(pending_queue->lock));
+        pthread_mutex_lock(&(q_lock));
 
         //  check when there is a task waiting in the pending queue
         while (pending_queue->size == 0)
         {
-            pthread_cond_wait(&(task_list->pending_queue_not_empty), &(pending_queue->lock));
+            pthread_cond_wait(&(pending_queue_not_empty), &(q_lock));
         }
 
-        //  get oldest task in the queue
-        int task_fd = pending_queue->head->fd;
-
-        //  remove the task from pending queue (and free the pointer)
-        Node *temp = pending_queue->head;
-        pending_queue->head = pending_queue->head->next;
-        pending_queue->size--;
-        free(temp);
-
-        pthread_mutex_unlock(&(pending_queue->lock));
+        //  get oldest task in the pending queue
+        int task_fd = getJobFromPendingQueue(pending_queue);
 
         //  insert task to the tasks list for tasks that being handled currently
-        pthread_mutex_lock(&(task_list->lock));
+        addToTaskList(task_list, task_fd);
 
-        task_list->fd[task_list->rear] = task_fd;
-        task_list->rear = (task_list->rear + 1) % task_list->size;
+        pthread_mutex_unlock(&(q_lock));
 
-        pthread_mutex_unlock(&(task_list->lock));
         //  segel's functions to handle the fd requset
         requestHandle(task_fd);
         Close(connfd);
@@ -52,11 +42,15 @@ void *worker_func(void *arg, ThreadPool *_threadpool)
                 pthread_mutex_unlock(&(pending_queue->mutex));
         */
 
-        //  remove task from the tasks list because it's finished
-        task_list->front = (task_list->front + 1) % task_list->size;
+        pthread_mutex_lock(&(q_lock));
 
-        //  thread has finished to handle the requset
-        pthread_cond_signal(&(pending_queue->tasks_list_not_full));
+        //  remove task from the tasks list because it's finished
+        removeFromTaskList(task_list, task_fd);
+
+        pthread_mutex_unlock(&(q_lock));
+
+        // //  thread has finished to handle the requset
+        // pthread_cond_signal(&(pending_queue->tasks_list_not_full));
     }
 
     pthread_exit(NULL);
