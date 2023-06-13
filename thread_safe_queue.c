@@ -89,9 +89,9 @@ void addFdToQueue(Queue *q, int fd)
     pthread_mutex_lock(&q_lock);
 
     //  check if the pending queue is full
-    if (pending_tasks->size + tasks_list->size < q->capacity)
+    if (pending_tasks->size + tasks_list->size < q->capacity && !block_flush_on)
     {
-        addToPendingQueue(pending_tasks, fd);
+        addToPendingQueue(q, fd);
         pthread_mutex_unlock(&q_lock);
     }
 
@@ -104,7 +104,7 @@ void addFdToQueue(Queue *q, int fd)
 
 // call only after q_lock is locked
 // no locks in this function - to prevent deadlocks!!
-void addToPendingQueue(PendingQueue *pending_queue, int fd)
+void addToPendingQueue(Queue* q, int fd)
 {
     //  create new node
     Node *new_fd_request = (Node *)malloc(sizeof(Node));
@@ -113,6 +113,7 @@ void addToPendingQueue(PendingQueue *pending_queue, int fd)
     new_fd_request->fd = fd;
     new_fd_request->next = NULL;
 
+    PendingQueue* pending_queue = q->m_pending_queue;
     //  check if it's the first Node inserted
     if (pending_queue->size == 1)
     {
@@ -128,6 +129,13 @@ void addToPendingQueue(PendingQueue *pending_queue, int fd)
 
     //  increase size
     pending_queue->size++;
+
+    // checks if should turn block_flush on
+    if (sched_policy == block_flush)
+    {
+        if (pending_queue->size + q->m_tasks_list->size == q->capacity)
+            block_flush_on = 1;
+    }
 }
 
 // call only after q_lock is locked
@@ -188,8 +196,9 @@ void addToTaskList(TasksList *tasks_list, int fd)
     tasks_list->size++;
 }
 
-void removeFromTaskList(TasksList *tasks_list, int target_fd)
+void removeFromTaskList(Queue *q, int target_fd)
 {
+    TasksList* tasks_list = q->m_tasks_list;
     Node *temp = tasks_list->head;
     Node *prev = NULL;
 
@@ -226,6 +235,12 @@ void removeFromTaskList(TasksList *tasks_list, int target_fd)
     free(temp);
 
     tasks_list->size--;
+
+    if (sched_policy == block_flush)
+    {
+        if (q->m_pending_queue->size + q->m_tasks_list->size ==0)
+            block_flush_on = 0;
+    }
 }
 
 /// wait (without busy-wait) for the condition specified in the policy
@@ -241,3 +256,78 @@ void policyHandler(Queue *q, int fd)
         pthread_cond_wait(&ready_to_insert, &q_lock);
     }
 }
+
+int checkIfCond(Queue* q,int fd){
+    Sched_Policy policy = q->m_sched_policy;
+    switch (policy) {
+        case block:
+            handleBlock(q,fd);
+            break;
+        case drop_tail:
+            handleDropTail(q,fd);
+            break;
+        case drop_head:
+            handleDropHead(q,fd);
+            break;
+        case block_flush:
+            handleBlockFlush(q,fd);
+            break;
+        case Dynamic:
+            handleDynamic(q,fd);
+            break;
+    }
+}
+
+void handleBlock(Queue* q, int fd){
+    while (q->m_pending_queue->size + q->m_tasks_list->size == q->capacity)
+    {
+        pthread_cond_wait(&ready_to_insert, &q_lock);
+    }
+    addToPendingQueue(q, fd);
+}
+
+void handleDropTail(Queue* q, int fd){
+    Close(fd);
+}
+
+void handleDropHead(Queue* q, int fd)
+{
+    PendingQueue* pending_queue = q->m_pending_queue;
+    removeLastNodeInPendingList(pending_queue);
+    addToPendingQueue(q, fd);
+}
+
+void handleBlockFlush(Queue* q, int fd)
+{
+    // block_flush is turned on when the queue gets full
+    //block flush turned off when the queue gets empty
+    while ( (q->m_pending_queue->size ||  q->m_tasks_list->size) && block_flush_on)
+    {
+        pthread_cond_wait(&ready_to_insert, &q_lock);
+    }
+
+    addToPendingQueue(q, fd);
+}
+
+void removeLastNodeInPendingList(PendingQueue* pending_queue){
+    if (pending_queue->size <= 0)
+    {
+        fprintf(stderr, "queue is already empty\n");
+        return;
+    }
+
+    Node *target = pending_queue->head;
+    int target_fd = target->fd;
+    Node *target_next = target->next;
+    pending_queue->head = target_next;
+
+    // edge case- if pending queue capacity is 1- so head = tail = NULL
+    if (!target_next)
+    {
+        pending_queue->tail = NULL;
+    }
+
+    free(target);
+    pending_queue->size--;
+}
+

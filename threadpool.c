@@ -8,7 +8,7 @@ void *worker_func(void *arg, ThreadPool *_threadpool)
 {
     //  get the two queues
     TasksList *task_list = _threadpool->pool_queue->m_tasks_list;
-    PendingQueue *pending_queue = _threadpool->pending_queue;
+    PendingQueue *pending_queue = _threadpool->pool_queue->m_pending_queue;
 
     while (1)
     {
