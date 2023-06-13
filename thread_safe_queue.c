@@ -37,6 +37,8 @@ void Queue_init(Queue *q, int _number_of_threads, int queue_size, int max_capaci
     pendingQueue_init(q->m_pending_queue);
 
     number_of_threads = _number_of_threads;
+    sched_policy = policy;
+    block_flush_on = 0;
 }
 
 /*---------------------D'tors---------------------*/
@@ -98,7 +100,8 @@ void addFdToQueue(Queue *q, int fd)
     // if the Queue is full, act as the policy indicates
     else
     {
-        policyHandler(q, fd);
+        checkIfCond(q, fd);
+        pthread_mutex_unlock(&q_lock);
     }
 }
 
@@ -130,11 +133,17 @@ void addToPendingQueue(Queue* q, int fd)
     //  increase size
     pending_queue->size++;
 
-    // checks if should turn block_flush on
+
     if (sched_policy == block_flush)
     {
+        // checks if should turn block_flush on
         if (pending_queue->size + q->m_tasks_list->size == q->capacity)
             block_flush_on = 1;
+
+        // if there is space, then wake up all the thread that are waiting
+        // (note - only reason for a thread to wait in this policy when there is space, is if there wasn't space earlier.)
+        else
+            pthread_cond_signal(&ready_to_insert);
     }
 }
 
@@ -142,7 +151,7 @@ void addToPendingQueue(Queue* q, int fd)
 // no locks in this function - to prevent deadlocks!!
 int getJobFromPendingQueue(PendingQueue *pending_queue)
 {
-    //  check if it's the first Node inserted
+    //  check if it's the first Node to be inserted
     if (pending_queue->size <= 0)
     {
         fprintf(stderr, "queue is already empty\n");
@@ -238,24 +247,13 @@ void removeFromTaskList(Queue *q, int target_fd)
 
     if (sched_policy == block_flush)
     {
-        if (q->m_pending_queue->size + q->m_tasks_list->size ==0)
+        if (q->m_pending_queue->size + q->m_tasks_list->size == 0)
             block_flush_on = 0;
     }
+    else
+        pthread_cond_signal(&ready_to_insert);
 }
 
-/// wait (without busy-wait) for the condition specified in the policy
-void policyHandler(Queue *q, int fd)
-{
-    Sched_Policy policy = q->m_sched_policy;
-
-    // create cond depending on the policy;
-    // no bool type in c, so I used int
-    int cond;
-    while (!cond)
-    {
-        pthread_cond_wait(&ready_to_insert, &q_lock);
-    }
-}
 
 int checkIfCond(Queue* q,int fd){
     Sched_Policy policy = q->m_sched_policy;
@@ -299,13 +297,12 @@ void handleDropHead(Queue* q, int fd)
 
 void handleBlockFlush(Queue* q, int fd)
 {
-    // block_flush is turned on when the queue gets full
-    //block flush turned off when the queue gets empty
-    while ( (q->m_pending_queue->size ||  q->m_tasks_list->size) && block_flush_on)
+    // block_flush flag is turned on when the queue gets full
+    // block flush flag is turned off when the queue gets empty
+    while (block_flush_on)
     {
         pthread_cond_wait(&ready_to_insert, &q_lock);
     }
-
     addToPendingQueue(q, fd);
 }
 
@@ -313,7 +310,7 @@ void handleDynamic(Queue* q, int fd){
     Close(fd);
 
     if (q->capacity == q->max_dynamic_capacity){
-        fprintf(stderr, "queue capacity is full\n");
+        fprintf(stderr, "queue capacity is already max\n");
         return;
     }
 
@@ -328,7 +325,6 @@ void removeLastNodeInPendingList(PendingQueue* pending_queue){
     }
 
     Node *target = pending_queue->head;
-    int target_fd = target->fd;
     Node *target_next = target->next;
     pending_queue->head = target_next;
 

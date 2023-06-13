@@ -4,20 +4,20 @@
 #include "threadpool.h"
 
 // i just copied from gpt.. I'll continue later...
-void *worker_func(void *arg, ThreadPool *_threadpool)
+void *worker_func(void *arg)
 {
     //  get the two queues
-    TasksList *task_list = _threadpool->pool_queue->m_tasks_list;
-    PendingQueue *pending_queue = _threadpool->pool_queue->m_pending_queue;
+    ThreadPool* threadpool = (ThreadPool*) arg;
+    Queue* q = threadpool->pool_queue;
+    TasksList *task_list = q->m_tasks_list;
+    PendingQueue *pending_queue = q->m_pending_queue;
 
-    while (1)
-    {
+    while (1) {
 
         pthread_mutex_lock(&(q_lock));
 
         //  check when there is a task waiting in the pending queue
-        while (pending_queue->size == 0)
-        {
+        while (pending_queue->size == 0) {
             pthread_cond_wait(&(pending_queue_not_empty), &(q_lock));
         }
 
@@ -29,34 +29,20 @@ void *worker_func(void *arg, ThreadPool *_threadpool)
 
         pthread_mutex_unlock(&(q_lock));
 
-        //  segel's functions to handle the fd requset
+        // handle the fd request
         requestHandle(task_fd);
-        Close(connfd);
 
-        //  I have no clue what chatGpt tried to do here
-        /*
-                pthread_mutex_lock(&(pending_queue->mutex));
-                Queue *temp = task_list;
-                task_list = pending_queue;
-                pending_queue = temp;
-                pthread_mutex_unlock(&(pending_queue->mutex));
-        */
-
+        // catch a lock and remove the task
         pthread_mutex_lock(&(q_lock));
-
-        //  remove task from the tasks list because it's finished
-        removeFromTaskList(task_list, task_fd);
-
+        removeFromTaskList(q, task_fd);
         pthread_mutex_unlock(&(q_lock));
 
-        // //  thread has finished to handle the requset
-        // pthread_cond_signal(&(pending_queue->tasks_list_not_full));
+        // close the connection fd
+        Close(task_fd);
     }
-
-    pthread_exit(NULL);
 }
 
-void threadPool_init(ThreadPool *threadpool, int number_of_threads, int queue_size, int max_size, Sched_Policy sched_policy)
+void threadPool_init(ThreadPool *threadpool, int _number_of_threads, int queue_size, int max_size, Sched_Policy _sched_policy)
 {
     //  initial fields
     threadpool->num_threads = number_of_threads;
@@ -71,7 +57,8 @@ void threadPool_init(ThreadPool *threadpool, int number_of_threads, int queue_si
     //  create threads
     for (int i = 0; i < number_of_threads; i++)
     {
-        pthread_create(&(threadpool->threads[i]), NULL, worker_func, ) // NOTE: to check what should be pasted as last argument?
+        pthread_create(&(threadpool->threads[i]), NULL, worker_func, &threadpool); // the last arg is the arg to be passed to worker_func
+
     }
 }
 

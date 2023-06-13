@@ -16,6 +16,6 @@ typedef struct
 
 void threadPool_init(ThreadPool *threadpool, int number_of_threads, int queue_size, int max_size, Sched_Policy sched_policy);
 void threadPoolDestroy(ThreadPool *threadpool);
-void *worker_func(void *arg, ThreadPool *_threadpool);
+void *worker_func(void *arg);
 
 #endif // WEBSERVER_FILES_THREADPOOL_H

@@ -7,9 +7,9 @@
 #include "request.h"
 #include "segel.h"
 
-pthread_mutex_t q_lock;
-pthread_cond_t ready_to_insert;
-pthread_cond_t pending_queue_not_empty;
+static pthread_mutex_t q_lock;
+static pthread_cond_t ready_to_insert;
+static pthread_cond_t pending_queue_not_empty;
 static int number_of_threads;
 // block_flush is turned on when the queue gets full
 // block flush turned off when the queue gets empty
