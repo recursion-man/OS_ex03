@@ -309,6 +309,17 @@ void handleBlockFlush(Queue* q, int fd)
     addToPendingQueue(q, fd);
 }
 
+void handleDynamic(Queue* q, int fd){
+    Close(fd);
+
+    if (q->capacity == q->max_dynamic_capacity){
+        fprintf(stderr, "queue capacity is full\n");
+        return;
+    }
+
+    q->capacity++;
+}
+
 void removeLastNodeInPendingList(PendingQueue* pending_queue){
     if (pending_queue->size <= 0)
     {
