@@ -37,8 +37,8 @@ void Queue_init(Queue *q, int _number_of_threads, int queue_size, int max_capaci
     pendingQueue_init(q->m_pending_queue);
 
     number_of_threads = _number_of_threads;
-    sched_policy = policy;
-    block_flush_on = 0;
+    q->m_sched_policy = policy;
+   // block_flush_on = 0;
 }
 
 /*---------------------D'tors---------------------*/
@@ -83,7 +83,7 @@ void QueueDestroy(Queue *queue)
     Note: -if the pending queue was empty, he would singal to the threads that a new tasks has arrived
           -if the pending queue is full, we need to act according to the sched_policy
 */
-void addFdToQueue(Queue *q, Node* request)
+void addFdToQueue(Queue *q, Node *request)
 {
     //  get pending queue and lock it
     PendingQueue *pending_tasks = q->m_pending_queue;
@@ -91,7 +91,7 @@ void addFdToQueue(Queue *q, Node* request)
     pthread_mutex_lock(&q_lock);
 
     //  check if the pending queue is full
-    if (pending_tasks->size + tasks_list->size < q->capacity )
+    if (pending_tasks->size + tasks_list->size < q->capacity)
     {
         addToPendingQueue(q, request);
         pthread_mutex_unlock(&q_lock);
@@ -107,10 +107,10 @@ void addFdToQueue(Queue *q, Node* request)
 
 // call only after q_lock is locked
 // no locks in this function - to prevent deadlocks!!
-void addToPendingQueue(Queue* q, Node* request)
+void addToPendingQueue(Queue *q, Node *request)
 {
 
-    PendingQueue* pending_queue = q->m_pending_queue;
+    PendingQueue *pending_queue = q->m_pending_queue;
     //  check if it's the first Node inserted
     if (pending_queue->size == 0)
     {
@@ -125,12 +125,11 @@ void addToPendingQueue(Queue* q, Node* request)
 
     //  increase size
     pending_queue->size++;
-
 }
 
 // call only after q_lock is locked
 // no locks in this function - to prevent deadlocks!!
-Node* getJobFromPendingQueue(PendingQueue *pending_queue)
+Node *getJobFromPendingQueue(PendingQueue *pending_queue)
 {
     //  check if it's the first Node to be inserted
     if (pending_queue->size <= 0)
@@ -139,15 +138,16 @@ Node* getJobFromPendingQueue(PendingQueue *pending_queue)
         return NULL;
     }
 
-    // update dispatch time in request Node
+    // update dispatch interval in request Node
     Node *target = pending_queue->head;
-    struct timeval dispatch_time;
-    gettimeofday(&dispatch_time, NULL);
-    target->stats.dispatch = dispatch_time;
+    struct timeval current_time;
+    gettimeofday(&current_time, NULL);
 
-    // update head ti point to the next Node (casting is required because C sucks)
-    pending_queue->head = (Node*)target->next;
+    target->stats.dispatch.tv_sec = current_time.tv_sec - target->stats.arrival.tv_sec;
+    target->stats.dispatch.tv_usec = current_time.tv_usec - target->stats.arrival.tv_usec;
 
+    // update head to point to the next Node (casting is required because C sucks)
+    pending_queue->head = (Node *)target->next;
 
     // If the head becomes NULL, update the tail to NULL as well
     if (!pending_queue->head)
@@ -162,9 +162,8 @@ Node* getJobFromPendingQueue(PendingQueue *pending_queue)
 
 // call only after q_lock is locked
 // no locks in this function - to prevent deadlocks!!
-void addToTaskList(TasksList *tasks_list, Node* request)
+void addToTaskList(TasksList *tasks_list, Node *request)
 {
-
 
     //  check if it's the first Node inserted
     if (tasks_list->size == 0)
@@ -182,9 +181,9 @@ void addToTaskList(TasksList *tasks_list, Node* request)
     tasks_list->size++;
 }
 
-void removeFromTaskList(Queue *q, Node* request)
+void removeFromTaskList(Queue *q, Node *request)
 {
-    TasksList* tasks_list = q->m_tasks_list;
+    TasksList *tasks_list = q->m_tasks_list;
     Node *temp = tasks_list->head;
     Node *prev = NULL;
 
@@ -216,14 +215,14 @@ void removeFromTaskList(Queue *q, Node* request)
     // check if we need to update the tail
     prev->next = temp->next;
     if (!temp->next)
-        tasks_list->tail = NULL; // Note: should it be: tasks_list->tail = prev?
+        tasks_list->tail = prev; // Note: should it be: tasks_list->tail = prev?
 
     free(temp);
 
     tasks_list->size--;
 
     //  signal that there is space in the pending queue
-    if (sched_policy == block_flush)
+    if (q->m_sched_policy == block_flush)
     {
         if (q->m_pending_queue->size + q->m_tasks_list->size == 0)
             pthread_cond_signal(&ready_to_insert);
@@ -232,29 +231,35 @@ void removeFromTaskList(Queue *q, Node* request)
         pthread_cond_signal(&(ready_to_insert));
 }
 
-
-int checkIfCond(Queue* q,Node* request){
+int checkIfCond(Queue *q, Node *request)
+{
     Sched_Policy policy = q->m_sched_policy;
-    switch (policy) {
-        case block:
-            handleBlock(q,request);
-            break;
-        case drop_tail:
-            handleDropTail(request);
-            break;
-        case drop_head:
-            handleDropHead(q,request);
-            break;
-        case block_flush:
-            handleBlockFlush(q,request);
-            break;
-        case Dynamic:
-            handleDynamic(q,request);
-            break;
+    switch (policy)
+    {
+    case block:
+        handleBlock(q, request);
+        break;
+    case drop_tail:
+        handleDropTail(request);
+        break;
+    case drop_head:
+        handleDropHead(q, request);
+        break;
+    case block_flush:
+        handleBlockFlush(q, request);
+        break;
+    case Dynamic:
+        handleDynamic(q, request);
+        break;
+    case drop_random:
+        handleDropRandom(q, request);
+        break;
     }
+    return 1;
 }
 
-void handleBlock(Queue* q, Node* request){
+void handleBlock(Queue *q, Node *request)
+{
     while (q->m_pending_queue->size + q->m_tasks_list->size == q->capacity)
     {
         pthread_cond_wait(&ready_to_insert, &q_lock);
@@ -262,19 +267,20 @@ void handleBlock(Queue* q, Node* request){
     addToPendingQueue(q, request);
 }
 
-void handleDropTail(Node* request){
+void handleDropTail(Node *request)
+{
     Close(request->fd);
     free(request);
 }
 
-void handleDropHead(Queue* q, Node* request)
+void handleDropHead(Queue *q, Node *request)
 {
-    PendingQueue* pending_queue = q->m_pending_queue;
-    removeLastNodeInPendingList(pending_queue);
+    PendingQueue *pending_queue = q->m_pending_queue;
+    removeFirstNodeInPendingList(pending_queue);
     addToPendingQueue(q, request);
 }
 
-void handleBlockFlush(Queue* q, Node* request)
+void handleBlockFlush(Queue *q, Node *request)
 {
 
     // stays in loop while queue isn't empty
@@ -286,14 +292,15 @@ void handleBlockFlush(Queue* q, Node* request)
     // drop the request
     Close(request->fd);
     free(request);
-
 }
 
-void handleDynamic(Queue* q, Node* request){
+void handleDynamic(Queue *q, Node *request)
+{
     Close(request->fd);
     free(request);
 
-    if (q->capacity == q->max_dynamic_capacity){
+    if (q->capacity == q->max_dynamic_capacity)
+    {
         fprintf(stderr, "queue capacity is already max\n");
         return;
     }
@@ -301,7 +308,8 @@ void handleDynamic(Queue* q, Node* request){
     q->capacity++;
 }
 
-void removeLastNodeInPendingList(PendingQueue* pending_queue){
+void removeFirstNodeInPendingList(PendingQueue *pending_queue)
+{
     if (pending_queue->size <= 0)
     {
         fprintf(stderr, "queue is already empty\n");
@@ -309,7 +317,7 @@ void removeLastNodeInPendingList(PendingQueue* pending_queue){
     }
 
     Node *target = pending_queue->head;
-    Node *target_next = (Node*) target->next;
+    Node *target_next = (Node *)target->next;
     pending_queue->head = target_next;
 
     // edge case: if pending queue capacity is 1 - so head = tail = NULL
@@ -325,3 +333,72 @@ void removeLastNodeInPendingList(PendingQueue* pending_queue){
     pending_queue->size--;
 }
 
+void handleDropRandom(Queue *q, Node *request)
+{
+    //  get amount to drop
+    int size_to_drop = (q->m_pending_queue->size) / 2;
+
+    int current_size;
+    while (size_to_drop > 0)
+    {
+        current_size = q->m_pending_queue->size;
+
+        srand(time(NULL));
+
+        // get a random number between 0 and (pending_queue current size - 1 indluded) - [0,pending_queue size -1]
+        int node_index_to_drop = rand() % current_size;
+
+        //  drop node according to index picked
+        dropNodeByindex(q->m_pending_queue, node_index_to_drop);
+
+        //  decrease amount to drop
+        size_to_drop--;
+    }
+
+    //  add the new requst to the pending queue
+    addToPendingQueue(q, request);
+}
+
+void dropNodeByindex(PendingQueue *pending_queue, int node_index_to_drop)
+{
+    //  validity check
+    if (node_index_to_drop >= pending_queue->size)
+    {
+        return;
+    }
+    //  if first node was picked
+    if (node_index_to_drop == 0)
+    {
+        Node *node_to_free = pending_queue->head;
+        pending_queue->head = node_to_free->next;
+        if (!pending_queue->head)
+            pending_queue->tail = NULL;
+        Close(node_to_free->fd);
+        free(node_to_free);
+        return;
+    }
+
+    //  start from second node
+    int index = 1;
+    Node *prev = pending_queue->head;
+    Node *node_to_drop = pending_queue->head->next;
+
+    //  find the node in the queue with the index required
+    while (index < node_index_to_drop)
+    {
+        prev = node_to_drop;
+        node_to_drop = node_to_drop->next;
+        index++;
+    }
+
+    // link prev and next
+    prev->next = node_to_drop->next;
+
+    //  check if prev is now the new tail
+    if (!prev->next)
+        pending_queue->tail = prev;
+
+    //  delete node
+    Close(node_to_drop->fd);
+    free(node_to_drop);
+}

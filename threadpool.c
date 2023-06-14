@@ -7,12 +7,12 @@
 void *worker_func(void *arg)
 {
     //  extract args
-    workerFuncArgs *args = (workerFuncArgs *) arg;
-    ThreadPool* threadpool = args->threadPool;
-    int id  = args->index;
+    workerFuncArgs *args = (workerFuncArgs *)arg;
+    ThreadPool *threadpool = args->threadPool;
+    int id = args->index;
 
     // extract queues
-    Queue* q = threadpool->pool_queue;
+    Queue *q = threadpool->pool_queue;
     TasksList *task_list = q->m_tasks_list;
     PendingQueue *pending_queue = q->m_pending_queue;
 
@@ -21,17 +21,19 @@ void *worker_func(void *arg)
     int dynamic_count = 0;
     int static_count = 0;
 
-    while (1) {
+    while (1)
+    {
 
         pthread_mutex_lock(&(q_lock));
 
         //  check when there is a task waiting in the pending queue
-        while (pending_queue->size == 0) {
+        while (pending_queue->size == 0)
+        {
             pthread_cond_wait(&(pending_queue_not_empty), &(q_lock));
         }
 
-        //  get oldest task in the pending queue
-        Node* request = getJobFromPendingQueue(pending_queue);
+        //  get oldest task in the pending queue and remove it from the pending queue (will not free memory!)
+        Node *request = getJobFromPendingQueue(pending_queue);
 
         //  insert task to the tasks list for tasks that being handled currently
         addToTaskList(task_list, request);
@@ -47,16 +49,14 @@ void *worker_func(void *arg)
         // print to the response headers
         printStatsToHeaders(request);
 
-
         // handle the fd request
 
         requestHandle(request);
 
-        //update counters
+        // update counters
         total_count++;
         static_count = request->stats.thread_static;
         dynamic_count = request->stats.thread_dynamic;
-
 
         // catch a lock and remove the task
         pthread_mutex_lock(&(q_lock));
@@ -68,15 +68,15 @@ void *worker_func(void *arg)
     }
 }
 
-void threadPool_init(workerFuncArgs* args, int _number_of_threads, int queue_size, int max_size, Sched_Policy _sched_policy)
+void threadPool_init(workerFuncArgs *args, int number_of_threads, int queue_size, int max_size, Sched_Policy _sched_policy)
 {
     //  initial fields
-    ThreadPool* threadpool = args->threadPool;
+    ThreadPool *threadpool = args->threadPool;
     threadpool->num_threads = number_of_threads;
     threadpool->pool_queue = (Queue *)malloc(sizeof(Queue));
 
     //  initial queue
-    Queue_init(threadpool->pool_queue, number_of_threads, queue_size, max_size, sched_policy);
+    Queue_init(threadpool->pool_queue, number_of_threads, queue_size, max_size, _sched_policy);
 
     //  allocate memory for threads array
     threadpool->threads = (pthread_t *)malloc(sizeof(threadpool->threads));
@@ -95,12 +95,13 @@ void threadPoolDestroy(ThreadPool *threadpool)
     free(threadpool->threads);
 }
 
-void printStatsToHeaders(Node * request){
+void printStatsToHeaders(Node *request)
+{
     char buf[MAXBUF];
     Stats stats = request->stats;
 
     // fill buffer
-    sprintf(buf, "%sStat-Req-Arrival:: %lu.%06lu\r\n" ,buf, stats.arrival.tv_sec, stats.arrival.tv_usec);
+    sprintf(buf, "%sStat-Req-Arrival:: %lu.%06lu\r\n", buf, stats.arrival.tv_sec, stats.arrival.tv_usec);
     sprintf(buf, "%sStat-Req-Dispatch:: %lu.%06lu\r\n", buf, stats.arrival.tv_sec, stats.arrival.tv_usec);
     sprintf(buf, "%sStat-Thread-Id:: %d\r\n", buf, stats.thread_id);
     sprintf(buf, "%sStat-Thread-Count:: %d\r\n", buf, stats.thread_count);

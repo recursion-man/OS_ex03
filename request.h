@@ -1,5 +1,7 @@
 #ifndef __REQUEST_H__
+#define __REQUEST_H__
 
+#include <sys/time.h>
 
 typedef struct
 {
@@ -11,7 +13,7 @@ typedef struct
     int thread_dynamic;
 } Stats;
 
-typedef struct
+typedef struct Node
 {
     int fd;
     struct Node *next;

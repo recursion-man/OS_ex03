@@ -21,7 +21,7 @@ typedef struct
 } workerFuncArgs;
 
 
-void threadPool_init(workerFuncArgs* , int number_of_threads, int queue_size, int max_size, Sched_Policy sched_policy);
+void threadPool_init(workerFuncArgs* arg, int number_of_threads, int queue_size, int max_size, Sched_Policy sched_policy);
 void threadPoolDestroy(ThreadPool *threadpool);
 void *worker_func(void *arg);
 void printStatsToHeaders(Node * request);
