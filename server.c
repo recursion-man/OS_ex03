@@ -60,15 +60,31 @@ int main(int argc, char *argv[])
     //
     // HW3: Create some threads...
     //
+
+    // initial args for worker_func
     ThreadPool* thread_pool = (ThreadPool *)malloc(sizeof(ThreadPool));
-    threadPool_init(thread_pool, num_of_threads, queue_size, max_size, sched_policy);
+    workerFuncArgs worker_func_args[number_of_threads];
+    for (int i = 0; i < number_of_threads; i++) {
+        worker_func_args[i].threadPool = thread_pool;
+        worker_func_args[i].index = i;
+    }
+    threadPool_init(worker_func_args, num_of_threads, queue_size, max_size, sched_policy);
 
     listenfd = Open_listenfd(port);
     while (1)
     {
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *)&clientlen);
+        struct timeval arrival_time;
+        gettimeofday(&arrival_time, NULL);
 
-        addFdToQueue(thread_pool->pool_queue, connfd);
+        // create new request Node
+        Node *new_fd_request = (Node *)malloc(sizeof(Node));
+        //  set data
+        new_fd_request->fd = connfd;
+        new_fd_request->next = NULL;
+        new_fd_request->stats.arrival=arrival_time;
+
+        addFdToQueue(thread_pool->pool_queue, new_fd_request);
     }
 }

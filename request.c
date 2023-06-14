@@ -152,9 +152,9 @@ void requestServeStatic(int fd, char *filename, int filesize)
 }
 
 // handle a request
-void requestHandle(int fd)
+void requestHandle(Node* request)
 {
-
+   int fd = request->fd;
    int is_static;
    struct stat sbuf;
    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
@@ -185,12 +185,14 @@ void requestHandle(int fd)
          return;
       }
       requestServeStatic(fd, filename, sbuf.st_size);
+      request->stats.thread_static++;
    } else {
       if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
          requestError(fd, filename, "403", "Forbidden", "OS-HW3 Server could not run this CGI program");
          return;
       }
       requestServeDynamic(fd, filename, cgiargs);
+      request->stats.thread_dynamic++;
    }
 }
 

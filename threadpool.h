@@ -14,8 +14,16 @@ typedef struct
     Queue *pool_queue;
 } ThreadPool;
 
-void threadPool_init(ThreadPool *threadpool, int number_of_threads, int queue_size, int max_size, Sched_Policy sched_policy);
+typedef struct
+{
+    ThreadPool* threadPool;
+    int index;
+} workerFuncArgs;
+
+
+void threadPool_init(workerFuncArgs* , int number_of_threads, int queue_size, int max_size, Sched_Policy sched_policy);
 void threadPoolDestroy(ThreadPool *threadpool);
 void *worker_func(void *arg);
+void printStatsToHeaders(Node * request);
 
 #endif // WEBSERVER_FILES_THREADPOOL_H

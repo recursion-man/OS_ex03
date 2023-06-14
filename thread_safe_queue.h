@@ -27,12 +27,6 @@ typedef enum
 
 static Sched_Policy sched_policy;
 
-typedef struct Node
-{
-    int fd;
-    struct Node *next;
-} Node;
-
 typedef struct
 {
     Node *head;
@@ -67,7 +61,7 @@ void pendingQueueDestroy(PendingQueue *pending_queue);
 void pendingQueue_init(PendingQueue *pending_tasks);
 
 void singnalIfCond(Queue* queue);
-int checkIfCond(Queue* queue,int);
+int checkIfCond(Queue* queue,Node* request);
 
 void tasksListDestroy(TasksList *tasks);
 void tasksList_init(TasksList *tasks);
@@ -75,21 +69,21 @@ void tasksList_init(TasksList *tasks);
 void QueueDestroy(Queue *queue);
 void Queue_init(Queue *q, int number_of_threads, int number_of_request_connection, int max_of_request_connection, Sched_Policy policy);
 
-void addFdToQueue(Queue *q, int fd);
-void addToPendingQueue(Queue*, int fd);
+void addFdToQueue(Queue *q, Node* request);
+void addToPendingQueue(Queue*, Node* request);
 void removeLastNodeInPendingList(PendingQueue *pending_queue);
-int getJobFromPendingQueue(PendingQueue *pending_queue);
+Node *getJobFromPendingQueue(PendingQueue *pending_queue);
 
-void addToTaskList(TasksList *tasks_list, int fd);
-void removeFromTaskList(Queue*, int target_fd);
+void addToTaskList(TasksList *tasks_list, Node* request);
+void removeFromTaskList(Queue*, Node* request);
 
-void policyHandler(Queue *q, int fd);
+void policyHandler(Queue *q, Node* request);
 
-void handleBlock(Queue*,int);
-void handleDropTail(Queue* q,int);
-void handleDropHead(Queue* q,int);
-void handleBlockFlush(Queue* q,int);
-void handleDynamic(Queue* q,int);
+void handleBlock(Queue*,Node* );
+void handleDropTail(Node* request);
+void handleDropHead(Queue* q,Node* request);
+void handleBlockFlush(Queue* q,Node* request);
+void handleDynamic(Queue* q,Node* request);
 
 
 #endif // WEBSERVER_FILES_THREAD_SAFE_QUEUE_H
