@@ -68,21 +68,21 @@ void *worker_func(void *arg)
     }
 }
 
-void threadPool_init(workerFuncArgs *args, int number_of_threads, int queue_size, int max_size, Sched_Policy _sched_policy)
+void threadPool_init(workerFuncArgs *args, int _number_of_threads, int queue_size, int max_size, Sched_Policy _sched_policy)
 {
     //  initial fields
     ThreadPool *threadpool = args->threadPool;
-    threadpool->num_threads = number_of_threads;
+    threadpool->num_threads = _number_of_threads;
     threadpool->pool_queue = (Queue *)malloc(sizeof(Queue));
 
     //  initial queue
-    Queue_init(threadpool->pool_queue, number_of_threads, queue_size, max_size, _sched_policy);
+    Queue_init(threadpool->pool_queue, _number_of_threads, queue_size, max_size, _sched_policy);
 
     //  allocate memory for threads array
     threadpool->threads = (pthread_t *)malloc(sizeof(threadpool->threads));
 
     //  create threads
-    for (int i = 0; i < number_of_threads; i++)
+    for (int i = 0; i < _number_of_threads; i++)
     {
         // the last arg is the arg to be passed to worker_func: meaning : ThreadPool + index
         pthread_create(&(threadpool->threads[i]), NULL, worker_func, &args[i]);

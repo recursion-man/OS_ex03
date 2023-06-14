@@ -36,8 +36,11 @@ void Queue_init(Queue *q, int _number_of_threads, int queue_size, int max_capaci
     //  initial pending_queue
     pendingQueue_init(q->m_pending_queue);
 
-    number_of_threads = _number_of_threads;
+   // number_of_threads = _number_of_threads;
     q->m_sched_policy = policy;
+    q->capacity = queue_size;
+    q->max_dynamic_capacity = max_capacity;
+    
    // block_flush_on = 0;
 }
 
@@ -88,18 +91,23 @@ void addFdToQueue(Queue *q, Node *request)
     //  get pending queue and lock it
     PendingQueue *pending_tasks = q->m_pending_queue;
     TasksList *tasks_list = q->m_tasks_list;
+    
     pthread_mutex_lock(&q_lock);
-
+	
+	
     //  check if the pending queue is full
     if (pending_tasks->size + tasks_list->size < q->capacity)
     {
+    
         addToPendingQueue(q, request);
         pthread_mutex_unlock(&q_lock);
+        
     }
 
     // if the Queue is full, act as the policy indicates
     else
     {
+    
         checkIfCond(q, request);
         pthread_mutex_unlock(&q_lock);
     }
@@ -134,7 +142,7 @@ Node *getJobFromPendingQueue(PendingQueue *pending_queue)
     //  check if it's the first Node to be inserted
     if (pending_queue->size <= 0)
     {
-        fprintf(stderr, "queue is already empty\n");
+     //   fprintf(stderr, "queue is already empty\n");
         return NULL;
     }
 
@@ -207,7 +215,7 @@ void removeFromTaskList(Queue *q, Node *request)
     // If the fd isn't there
     if (temp == NULL)
     {
-        printf("Element not found in the list.\n");
+    //    printf("Element not found in the list.\n");
         return;
     }
 
@@ -301,7 +309,7 @@ void handleDynamic(Queue *q, Node *request)
 
     if (q->capacity == q->max_dynamic_capacity)
     {
-        fprintf(stderr, "queue capacity is already max\n");
+     //   fprintf(stderr, "queue capacity is already max\n");
         return;
     }
 
@@ -312,7 +320,7 @@ void removeFirstNodeInPendingList(PendingQueue *pending_queue)
 {
     if (pending_queue->size <= 0)
     {
-        fprintf(stderr, "queue is already empty\n");
+       // fprintf(stderr, "queue is already empty\n");
         return;
     }
 
