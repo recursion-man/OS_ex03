@@ -65,6 +65,7 @@ void *worker_func(void *arg)
 
         // close the connection fd
         Close(request->fd);
+        free(request);
     }
 }
 

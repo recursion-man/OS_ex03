@@ -133,6 +133,8 @@ void addToPendingQueue(Queue *q, Node *request)
 
     //  increase size
     pending_queue->size++;
+    if (pending_queue->size == 1)
+        pthread_cond_signal(&pending_queue_not_empty);
 }
 
 // call only after q_lock is locked
@@ -200,8 +202,10 @@ void removeFromTaskList(Queue *q, Node *request)
     {
         tasks_list->head = (Node *)temp->next;
         if (!temp->next)
+        {
             tasks_list->tail = NULL;
-        free(temp);
+        }
+        tasks_list->size--;
         return;
     }
 
@@ -225,7 +229,6 @@ void removeFromTaskList(Queue *q, Node *request)
     if (!temp->next)
         tasks_list->tail = prev; // Note: should it be: tasks_list->tail = prev?
 
-    free(temp);
 
     tasks_list->size--;
 
