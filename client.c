@@ -71,28 +71,72 @@ void clientPrint(int fd)
     }
 }
 
-int main(int argc, char *argv[])
-{
-    char *host, *filename;
+struct ClientThreadArguments {
+    char *host;
     int port;
-    int clientfd;
+    char *filename;
 
-    if (argc != 4) {
-        fprintf(stderr, "Usage: %s <host> <port> <filename>\n", argv[0]);
+};
+
+void *performClientOperations(void *arguments) {
+    // Cast the void pointer to the appropriate type
+    struct ClientThreadArguments *args = (struct ClientThreadArguments *)arguments;
+    fprintf(stderr, "%s", args->filename);
+    int clientfd = Open_clientfd(args->host, args->port);
+
+    clientSend(clientfd, args->filename);
+
+    clientPrint(clientfd);
+
+
+    exit(1);
+}
+
+
+
+int main(int argc, char *argv[]) {
+    if (argc < 4) {
+        fprintf(stderr, "Usage: %s <host> <port> <filename1> [filename2] [filename3] ...\n", argv[0]);
         exit(1);
     }
 
-    host = argv[1];
-    port = atoi(argv[2]);
-    filename = argv[3];
+    char *host = argv[1];
+    int port = atoi(argv[2]);
 
-    /* Open a single connection to the specified host and port */
-    clientfd = Open_clientfd(host, port);
+    int numFiles = argc - 3;
+    char **filenames = malloc(numFiles * sizeof(char *));
 
-    clientSend(clientfd, filename);
-    clientPrint(clientfd);
+    for (int i = 0; i < numFiles; i++) {
+        filenames[i] = argv[i + 3];
+    }
 
-    Close(clientfd);
+    pthread_t threads[numFiles];
+
+    for (int i = 0; i < numFiles; i++) {
+        // Create the arguments for the thread
+        struct ClientThreadArguments *args = malloc(sizeof(struct ClientThreadArguments));
+        args->host = host;
+        args->port = port;
+        args->filename = filenames[i];
+
+
+        // Create the thread and pass the arguments
+        if (pthread_create(&threads[i], NULL, performClientOperations, (void *)args) != 0) {
+            fprintf(stderr, "Failed to create thread\n");
+            exit(1);
+        }
+    }
+
+    sleep(2);
+    // Wait for all threads to finish
+    for (int i = 0; i < numFiles; i++) {
+        if (pthread_join(threads[i], NULL) != 0 ) {
+            fprintf(stderr, "Failed to join thread\n");
+            exit(1);
+        }
+    }
+
+    //free(filenames);
 
     exit(0);
 }
